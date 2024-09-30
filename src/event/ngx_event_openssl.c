@@ -764,12 +764,12 @@ ngx_ssl_load_certificate_key(ngx_pool_t *pool, char **err,
 
         engine = ENGINE_by_id((char *) p);
 
+        *last++ = ':';
+
         if (engine == NULL) {
             *err = "ENGINE_by_id() failed";
             return NULL;
         }
-
-        *last++ = ':';
 
         pkey = ENGINE_load_private_key(engine, (char *) last, 0, 0);
 
@@ -5187,6 +5187,9 @@ ngx_ssl_get_curves(ngx_connection_t *c, ngx_pool_t *pool, ngx_str_t *s)
     }
 
     curves = ngx_palloc(pool, n * sizeof(int));
+    if (curves == NULL) {
+        return NGX_ERROR;
+    }
 
     n = SSL_get1_curves(c->ssl->connection, curves);
     len = 0;

@@ -211,7 +211,10 @@ ngx_quic_run(ngx_connection_t *c, ngx_quic_conf_t *conf)
     qc = ngx_quic_get_connection(c);
 
     ngx_add_timer(c->read, qc->tp.max_idle_timeout);
-    ngx_add_timer(&qc->close, qc->conf->handshake_timeout);
+
+    if (!qc->streams.initialized) {
+        ngx_add_timer(&qc->close, qc->conf->handshake_timeout);
+    }
 
     ngx_quic_connstate_dbg(c);
 
@@ -1017,6 +1020,16 @@ ngx_quic_handle_payload(ngx_connection_t *c, ngx_quic_header_t *pkt)
             ngx_quic_path_dbg(c, "in handshake", qc->path);
             ngx_post_event(&qc->push, &ngx_posted_events);
         }
+    }
+
+    if (pkt->level == ssl_encryption_application) {
+        /*
+         * RFC 9001, 4.9.3.  Discarding 0-RTT Keys
+         *
+         * After receiving a 1-RTT packet, servers MUST discard
+         * 0-RTT keys within a short time
+         */
+        ngx_quic_discard_ctx(c, ssl_encryption_early_data);
     }
 
     if (qc->closing) {

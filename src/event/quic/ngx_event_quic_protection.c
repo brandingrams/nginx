@@ -743,8 +743,15 @@ ngx_quic_keys_discard(ngx_quic_keys_t *keys,
     ngx_quic_crypto_hp_cleanup(client);
     ngx_quic_crypto_hp_cleanup(server);
 
-    ngx_explicit_memzero(client->secret.data, client->secret.len);
-    ngx_explicit_memzero(server->secret.data, server->secret.len);
+    if (client->secret.len) {
+        ngx_explicit_memzero(client->secret.data, client->secret.len);
+        client->secret.len = 0;
+    }
+
+    if (server->secret.len) {
+        ngx_explicit_memzero(server->secret.data, server->secret.len);
+        server->secret.len = 0;
+    }
 }
 
 
@@ -844,6 +851,9 @@ ngx_quic_keys_update(ngx_event_t *ev)
     ngx_explicit_memzero(current->server.secret.data,
                          current->server.secret.len);
 
+    current->client.secret.len = 0;
+    current->server.secret.len = 0;
+
     ngx_explicit_memzero(client_key.data, client_key.len);
     ngx_explicit_memzero(server_key.data, server_key.len);
 
@@ -870,10 +880,17 @@ ngx_quic_keys_cleanup(ngx_quic_keys_t *keys)
     ngx_quic_crypto_cleanup(&next->client);
     ngx_quic_crypto_cleanup(&next->server);
 
-    ngx_explicit_memzero(next->client.secret.data,
-                         next->client.secret.len);
-    ngx_explicit_memzero(next->server.secret.data,
-                         next->server.secret.len);
+    if (next->client.secret.len) {
+        ngx_explicit_memzero(next->client.secret.data,
+                             next->client.secret.len);
+        next->client.secret.len = 0;
+    }
+
+    if (next->server.secret.len) {
+        ngx_explicit_memzero(next->server.secret.data,
+                             next->server.secret.len);
+        next->server.secret.len = 0;
+    }
 }
 
 
@@ -1144,8 +1161,19 @@ ngx_quic_decrypt(ngx_quic_header_t *pkt, uint64_t *largest_pn)
         key_phase = (pkt->flags & NGX_QUIC_PKT_KPHASE) != 0;
 
         if (key_phase != pkt->key_phase) {
-            secret = &pkt->keys->next_key.client;
-            pkt->key_update = 1;
+            if (pkt->keys->next_key.client.ctx != NULL) {
+                secret = &pkt->keys->next_key.client;
+                pkt->key_update = 1;
+
+            } else {
+                /*
+                 * RFC 9001,  6.3. Timing of Receive Key Generation.
+                 *
+                 * Trial decryption to avoid timing side-channel.
+                 */
+                ngx_log_debug0(NGX_LOG_DEBUG_EVENT, pkt->log, 0,
+                               "quic next key missing");
+            }
         }
     }
 
