@@ -3518,7 +3518,8 @@ ngx_http_v2_parse_scheme(ngx_http_request_t *r, ngx_str_t *value)
 static ngx_int_t
 ngx_http_v2_parse_authority(ngx_http_request_t *r, ngx_str_t *value)
 {
-    ngx_int_t  rc;
+    u_char     *p;
+    ngx_int_t   rc;
 
     if (r->host_start) {
         ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
@@ -3551,6 +3552,16 @@ ngx_http_v2_parse_authority(ngx_http_request_t *r, ngx_str_t *value)
     }
 
     r->headers_in.server = *value;
+
+    p = ngx_strlchr(r->host_start + value->len, r->host_end, ':');
+
+    if (p) {
+        rc = ngx_atoi(p + 1, r->host_end - p - 1);
+
+        if (rc > 0 && rc < 65536) {
+            r->port = rc;
+        }
+    }
 
     return NGX_OK;
 }
@@ -4102,15 +4113,14 @@ ngx_http_v2_process_request_body(ngx_http_request_t *r, u_char *pos,
                 n = size;
             }
 
-            if (n > 0) {
-                rb->buf->last = ngx_cpymem(rb->buf->last, pos, n);
-            }
-
             ngx_log_debug1(NGX_LOG_DEBUG_HTTP, fc->log, 0,
                            "http2 request body recv %uz", n);
 
-            pos += n;
-            size -= n;
+            if (n > 0) {
+                rb->buf->last = ngx_cpymem(rb->buf->last, pos, n);
+                pos += n;
+                size -= n;
+            }
 
             if (size == 0 && last) {
                 rb->rest = 0;
